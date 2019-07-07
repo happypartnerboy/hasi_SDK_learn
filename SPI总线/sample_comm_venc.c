@@ -748,7 +748,7 @@ HI_S32 SPI_Send_DataToK210(unsigned char *data, int len)
 	int i;
 	int ret;
 	HI_U32 value;
-	__u64 *p = NULL;
+	unsigned char *p = NULL;
 	char file_name[] = "/dev/spidev1.1";
 //	struct spi_ioc_transfer mesg[1];
 	p = malloc(len * sizeof(char));
