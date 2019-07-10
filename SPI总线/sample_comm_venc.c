@@ -488,7 +488,7 @@ HI_S32 SPI_Wait_Slave_Idle()
 		}
 		else
 		{
-			printf("SPI_Wait_Slave_Idle is not Idle");
+			printf("SPI_Wait_Slave_Idle is not Idle\n");
 		}
 	}
 	printf("SPI_Wait_Slave_Idle time out!!!\n");
@@ -550,7 +550,7 @@ HI_S32 SPI_Get_K210_DataAddr(unsigned char *addr)
 			return HI_FAILURE;
 		}
 
-		value = 900000;
+		value = 1000000;
 		ret = ioctl(g_fd, SPI_IOC_WR_MAX_SPEED_HZ, &value);
 		if (ret < 0)
 		{
@@ -645,22 +645,31 @@ HI_VOID SPI_Addr_Flip(unsigned char *p, unsigned int *addr)
 *		HI_FAILURE:命令发送失败;
 *		HI_SUCCESS:命令发送成功;
 ***************************************************************/
+static int icount = 0;
 HI_S32 SPI_Send_CmdToK210(int cmd, int len, unsigned char *addr)
 {
 	int i;
 	HI_U32 value;
 	int ret;
 	char file_name[] = "/dev/spidev1.1";
-//	struct spi_ioc_transfer mesg[1];
 	unsigned char buf_tx[8];
 	memset(buf_tx, 0, sizeof(buf_tx));
-
+#if 1
+	//发送命令前做修改
+	if (cmd > 3)
+	{
+		if (len > 0x100000)
+			len = 0x100000;
+		*addr &=  0xf0;
+		len = len >> 4;
+	}
+#endif	
 	//判断从机是否做好接收命令的准备
+	printf("*****************************************************\n");
 	if (HI_SUCCESS != SPI_Wait_Slave_Idle())
 	{
 		return HI_FAILURE;
 	}
-	
 	//cmd
 	buf_tx[0] = cmd;
 	//addr
@@ -675,17 +684,8 @@ HI_S32 SPI_Send_CmdToK210(int cmd, int len, unsigned char *addr)
 	for (i = 0; i < 7; i++)
 	{
 		buf_tx[7] += buf_tx[i];
-		printf("buf_tx[%d] = %x\n", i, buf_tx[i]);
 	}
-	printf("buf_tx[7] = %x\n", buf_tx[7]);
-/*
-	memset(mesg, 0, sizeof(mesg));
-	mesg[0].tx_buf = (__u64)buf_tx;
-	mesg[0].rx_buf = NULL; //设置为NULL
-	mesg[0].len = 8;
-	mesg[0].speed_hz = 1000000;
-	mesg[0].bits_per_word = 8;
-*/
+
 	g_fd = open(file_name, O_RDWR);
 	if (g_fd < 0)
 	{
@@ -702,7 +702,7 @@ HI_S32 SPI_Send_CmdToK210(int cmd, int len, unsigned char *addr)
 		return HI_FAILURE;
 	}
 
-	value = 900000;
+	value = 1000000;
 	ret = ioctl(g_fd, SPI_IOC_WR_MAX_SPEED_HZ, &value); //SPI_IOC_WR_MAX_SPEED_HZ
 	if (ret < 0)
 	{
@@ -717,21 +717,22 @@ HI_S32 SPI_Send_CmdToK210(int cmd, int len, unsigned char *addr)
 	{
 		printf("SPI_IOC_WR_BITS_PER_WORD set error\n");
 		close(g_fd);
-		return HI_FAILURE;
+		return HI_FAILURE; 
 	}
 	
-	write(g_fd, buf_tx, sizeof(buf_tx));
-	SPI_Wait_Slave_Ready();
-#if 0		
-	ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-	if (ret != mesg[0].len || ret < 0)
+	for (i = 0; i < 8; i++)
 	{
-		printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-		close(g_fd);
-		return HI_FAILURE;
-	}
-#endif
+		printf("buf_tx[%d] = %x\n", i, buf_tx[i]);
+	}	
+	
+	write(g_fd, buf_tx, sizeof(buf_tx));
 
+	icount++;
+	printf("icount = %d\n", icount);
+	
+	SPI_Wait_Slave_Ready();
+	printf("*****************************************************\n");
+	
 	close(g_fd);
 	return HI_SUCCESS;
 }	
@@ -750,22 +751,14 @@ HI_S32 SPI_Send_DataToK210(unsigned char *data, int len)
 	HI_U32 value;
 	unsigned char *p = NULL;
 	char file_name[] = "/dev/spidev1.1";
-//	struct spi_ioc_transfer mesg[1];
 	p = malloc(len * sizeof(char));
 	memset(p, 0, len);
-	for (i = 0; i < len; i ++)
+
+	for (i = 0; i < len; i++)
 	{
 		*(p + i) = data[i];
-		printf(">>>>>>>>>>*(p + %d) = %x<<<<<<<<\n", i, *(p + i));
+		//printf(">>>>>>>>>>*(p + %d) = %x<<<<<<<<\n", i, *(p + i));
 	}
-/*
-	memset(mesg, 0, sizeof(mesg));
-	mesg[0].tx_buf = p;
-	mesg[0].rx_buf = NULL;
-	mesg[0].len = len;
-	mesg[0].speed_hz = 1000000;
-	mesg[0].bits_per_word = 8;
-*/
 	g_fd = open(file_name, O_RDWR);
 	if (g_fd < 0)
 	{
@@ -784,7 +777,7 @@ HI_S32 SPI_Send_DataToK210(unsigned char *data, int len)
 		return HI_FAILURE;
 	}
 
-	value = 900000;
+	value = 1000000;
 	ret = ioctl(g_fd, SPI_IOC_WR_MAX_SPEED_HZ, &value);
 	if (ret < 0)
 	{
@@ -803,19 +796,8 @@ HI_S32 SPI_Send_DataToK210(unsigned char *data, int len)
 		close(g_fd);
 		return HI_FAILURE;
 	}
-
+	
 	write(g_fd, p, len);
-#if 0
-	ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-	if (ret != mesg[0].len || ret < 0)
-	{
-		printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-		free(p);
-		close(g_fd);
-		return HI_FAILURE;
-	}
-#endif
-
 	free(p);
 	close(g_fd);
 
@@ -899,249 +881,124 @@ HI_S32 SPI_Wait_Slave_Ready()
 #endif
 
 
-/**************************************************
-*发送视频流给从机k210
-***************************************************/
+/*************************************************************************
+*发送视频流给从机k210,write一次只能传输4096字节,k210只能接收16倍数的字节数
+**************************************************************************/
+unsigned char u8Addr[4];  //k210里能存视频数据的地址
 HI_S32 SPI_Send_StreamToK210(FILE* fpJpegFile, VENC_STREAM_S* pstStream)
 {
 	int i, j;
 	int len = 0;
+	int i16len_quotient = 0;
+	int i16len_remainder = 0;
+	int i16len_result = 0;
 	VENC_PACK_S*  pstData;
 	int quotient; /*商*/
 	int remainder;/*余数*/
 	unsigned char* Pvalidaddr = NULL;
-
+	unsigned char buf[16] = {0};
+	//发送写数据块命令
 	for (i = 0; i < pstStream->u32PackCount; i++)
 	{
 		pstData = &pstStream->pstPack[i];
 		Pvalidaddr = pstData->pu8Addr + pstData->u32Offset;
 		len = (pstData->u32Len - pstData->u32Offset);		//获取数据的长度
-
+		
+		//发送写数据块命令
 		if (len < 4096)
 		{
-			SPI_Send_DataToK210(Pvalidaddr, len);
-		}
+			if(len < 16)
+			{
+				memset(buf, 0, sizeof(buf));
+				memcpy(buf, Pvalidaddr, len);
+				memset((buf + len), 0xff, (16 - len));
+				SPI_Send_CmdToK210(4, 16, u8Addr);
+				SPI_Send_DataToK210(buf, 16);    //SPI_Send_DataToK210(Pvalidaddr, 16);
+			}
+			else
+			{
+				i16len_quotient = len / 16;   //16的倍数
+				i16len_remainder = len % 16;  //16的余数
+				
+				SPI_Send_CmdToK210(4, (i16len_quotient * 16), u8Addr);
+				SPI_Send_DataToK210(Pvalidaddr, (i16len_quotient * 16));
+				
+				if (0 != i16len_remainder)
+				{
+					memset(buf, 0, sizeof(buf));
+					memcpy(buf, (Pvalidaddr + (16 * i16len_quotient)), i16len_remainder);
+					memset((buf + i16len_remainder), 0xff, (16 - i16len_remainder));
+					SPI_Send_CmdToK210(4, 16, u8Addr);
+					SPI_Send_DataToK210(buf, 16); 			//SPI_Send_DataToK210(Pvalidaddr, len);
+				}
+			}
+		}	
+#if 1
 		else
 		{
-			quotient = (len / 4096); //商
-			remainder = (len % 4096);//余数
+			quotient = (len / 4096);  //商
+			remainder = (len % 4096); //余数
 			
 			//把商的倍数的数据传送完
 			for (j = 0; j < quotient; j++)
 			{
+				SPI_Send_CmdToK210(4, 4096, u8Addr);
 				SPI_Send_DataToK210(Pvalidaddr + (4096 * j), 4096);
 			}
-
 			//把余数的数据传送完
 			if(0 != remainder)
 			{
-				SPI_Send_DataToK210((Pvalidaddr + (4096 * quotient)), len - (quotient * 4096));
-			}
-		}
-	}
-
-	return HI_SUCCESS;
-}
-
-//发送数据给k210
-/********************************************************
-* addr:表示k210提供的能够存储图片的地址
-* len：获取k210的地址的长度，以字节为单位
-* cmd：表示对k210的操作，有如下：
-*		0：WRITE_CONFIG
-*		1：READ_CONFIG
-*		2：WRITE_DATA_BYTE
-*		3: READ_DATA_BYTE
-*		4: WRITE_DATA_BLOCK
-*		5: READ_DATA_BLOCK
-*********************************************************/
-HI_S32 SPI_Send_DataToK210_Old(FILE* fpJpegFile, VENC_STREAM_S* pstStream, unsigned char *addr, int len, int cmd)
-{
-    VENC_PACK_S*  pstData;
-    int i;
-	int j = 0;
-	HI_U32 value;
-	int ret;
-	int quotient, remainder;/*商，余数*/
-	__u64 *p = NULL;
-	unsigned char* Pvalidaddr = NULL;
-	char file_name[] = "/dev/spidev1.1";
-	struct spi_ioc_transfer mesg[1];
-	
-#if 1
-	unsigned char buf_tx[8];
-	memset(buf_tx, 0, sizeof(buf_tx));
-	//cmd
-	buf_tx[0] = cmd;
-	//addr 
-	buf_tx[1] = *addr;
-	buf_tx[2] = *(addr + 1);
-	buf_tx[3] = *(addr + 2);
-	buf_tx[4] = *(addr + 3);
-	//len 
-	buf_tx[5] = len;
-	buf_tx[6] = len >> 8;
-	buf_tx[7] = 0;
-	for (i = 0; i < 7; i++)
-	{
-		buf_tx[7] += buf_tx[i];
-		printf("buf_tx[%d] = %x\n", i, buf_tx[i]);
-	}
-#endif
-	g_fd = open(file_name, O_RDWR);
-	if (g_fd < 0)
-	{
-		printf("Open %s error!\n",file_name);
-		return HI_FAILURE;
-	}	
-
-	value = SPI_MODE_0;
-	ret = ioctl(g_fd, SPI_IOC_WR_MODE, &value);
-	if (ret < 0)
-	{
-		printf("SPI_IOC_WR_MODE set error\n");
-		close(g_fd);
-		return HI_FAILURE;
-	}
-	
-	value = 900000;
-	ret = ioctl(g_fd, SPI_IOC_WR_MAX_SPEED_HZ, &value);
-	if (ret < 0)
-	{
-		printf("SPI_IOC_WR_MAX_SPEED_HZ set error\n");
-		close(g_fd);
-		return HI_FAILURE;
-	}
-	
-	value = 8;
-	ret = ioctl(g_fd, SPI_IOC_WR_BITS_PER_WORD, &value);
-	if (ret < 0)
-	{
-		printf("SPI_IOC_WR_BITS_PER_WORD set error\n");
-		close(g_fd);
-		return HI_FAILURE;
-	}
-
-	/*向SPI写数据*/
-	for (i = 0; i < pstStream->u32PackCount; i++)
-	{
-		printf("---------------------------------------------------\n");
-		pstData = &pstStream->pstPack[i];
-		Pvalidaddr = pstData->pu8Addr + pstData->u32Offset; //获取数据的地址
-		printf("*Pvalidaddr = %x\n", Pvalidaddr);
-		len = (pstData->u32Len - pstData->u32Offset);		//获取数据的长度
-		printf("len = %d, pstStream->u32PackCount = %d\n", len, pstStream->u32PackCount);
-		//spi一次传输数据不能大于4096字节(4kb)
-		if (len < 4096)
-		{
-			printf("******data < 4096***********\n");
-			//先发送命令
-			mesg[0].tx_buf = buf_tx;
-			mesg[0].rx_buf = NULL;
-			mesg[0].len = 8;
-			mesg[0].speed_hz = 900000;
-			mesg[0].bits_per_word = 8;
-			ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-			if (ret != mesg[0].len || ret < 0)
-			{
-				printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-				close(g_fd);
-				return HI_FAILURE;
-			}
-			//等待从机准备好
-			usleep(1);
-		#if 0	
-			p = malloc(1 * sizeof(char));
-			memset(p, 0, 1);
-			memcpy(p, Pvalidaddr, 1);
-			printf("*(p) = %x\n", *(p));
-			mesg[0].tx_buf = p;
-			mesg[0].rx_buf = NULL;
-			mesg[0].len = 1;
-			mesg[0].speed_hz = 1000000;
-			mesg[0].bits_per_word = 8;
-			printf("I will send data\n");
-			ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-			if (ret != mesg[0].len || ret < 0)
-			{
-				printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-				close(g_fd);
-				return HI_FAILURE;
-			}
-			
-			free(p);
-		#endif
-		}
-#if 0
-		else
-		{
-			printf("******data > 4096***********\n");
-			quotient = (len / 4096); //商
-			remainder = (len % 4096);//余数
-			//传输4096的整数倍的数据
-			for (j = 0; j < quotient; j++)
-			{
-				p = malloc(4096 * sizeof(char));
-				memset(p, 0, 4096);	
-				memcpy(p, (Pvalidaddr + (4096 * j)), 4096);
-				mesg[0].tx_buf = p;
-				mesg[0].rx_buf = NULL;
-				mesg[0].len = 4096;
-				mesg[0].speed_hz = 1000000;
-				mesg[0].bits_per_word = 8;
-				ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-				if (ret != mesg[0].len || ret < 0)
+				i16len_result = len - (quotient * 4096);
+				if (i16len_result < 16)
 				{
-					printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-					close(g_fd);
-					return HI_FAILURE;
+					memset(buf, 0, sizeof(buf));
+					memcpy(buf, (Pvalidaddr + (4096 * quotient)), i16len_result);
+					memset((buf + i16len_result), 0xff, (16 - i16len_result));
+					SPI_Send_CmdToK210(4, 16, u8Addr);
+					SPI_Send_DataToK210(buf, 16); 
 				}
-				free(p);
-			}
-			//传输余数剩余的部分
-			if(0 != remainder)
-			{
-				p = malloc((len - (quotient * 4096)) * sizeof(char));
-				memset(p, 0, (len - (quotient * 4096)));
-				memcpy(p, (Pvalidaddr + (4096 * quotient)), len - (quotient * 4096));
-				mesg[0].tx_buf = p;
-				mesg[0].rx_buf = NULL;
-				mesg[0].len = len - (quotient * 4096);
-				mesg[0].speed_hz = 1000000;
-				mesg[0].bits_per_word = 8;
-				ret = ioctl(g_fd, SPI_IOC_MESSAGE(1), mesg);
-				if (ret != mesg[0].len || ret < 0)
+				else
 				{
-					printf("SPI_IOC_MESSAGE(1) send error!!!\n");
-					close(g_fd);
-					return HI_FAILURE;
+					i16len_quotient = i16len_result / 16;
+					i16len_remainder = i16len_result % 16;
+					
+					SPI_Send_CmdToK210(4, (i16len_quotient * 16), u8Addr);
+					SPI_Send_DataToK210((Pvalidaddr + (4096 * quotient)), (i16len_quotient * 16));
+
+					if (0 != i16len_remainder)
+					{
+						memset(buf, 0, sizeof(buf));
+						memcpy(buf, ((Pvalidaddr + (4096 * quotient)) + (16 * i16len_quotient)), i16len_remainder);
+						
+						memset((buf + i16len_remainder), 0xff, (16 - i16len_remainder));
+						
+						SPI_Send_CmdToK210(4, 16, u8Addr);
+						SPI_Send_DataToK210(buf, 16); 			//SPI_Send_DataToK210(Pvalidaddr, len);
+					}
 				}
-				free(p);
 			}
 		}
 #endif
 	}
-	close(g_fd);
 	
 	return HI_SUCCESS;
 }
 
 #if 1
 static int count = 0;
-unsigned char u8Addr[4];  //k210里能存视频数据的地址
 HI_S32 SAMPLE_COMM_VENC_SaveJPEG(FILE* fpJpegFile, VENC_STREAM_S* pstStream)
 {
-	int i = 0;                  
+	int i = 0; 
+	int len = 0;
 	unsigned int  i32Addr = 0; //把字符地址转化为整形的地址
 	VENC_PACK_S*  pstData;
 	int quotient; /*商*/
 	int remainder;/*余数*/
 	unsigned char* Pvalidaddr = NULL;
-	unsigned char test[1] = {0x1e};
-
-	pstData = &pstStream->pstPack[i];
-	Pvalidaddr = pstData->pu8Addr + pstData->u32Offset;
-
+	unsigned char test[16] = {
+								0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+								0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff, 0xef
+							  };
 	if (0 == count)
 	{	
 		//获取210可以提供的地址，只获取一次，再次进来就不再执行
@@ -1152,36 +1009,29 @@ HI_S32 SAMPLE_COMM_VENC_SaveJPEG(FILE* fpJpegFile, VENC_STREAM_S* pstStream)
 		}
 		else
 		{	
-# if 1
+#if 0
+			pstData = &pstStream->pstPack[0];
+			Pvalidaddr = pstData->pu8Addr + pstData->u32Offset;
+			len = (pstData->u32Len - pstData->u32Offset);
+
 			//发送写块命令,在地址为u8Addr写一个字节数据
-			SPI_Send_CmdToK210(2, 1, u8Addr);
+			SPI_Send_CmdToK210(4, 16, u8Addr);
 			//发送数据给k210
-			SPI_Send_DataToK210(test, 1);
+			SPI_Send_DataToK210(test, 16);
 			//SPI_Send_StreamToK210(fpJpegFile, pstStream);
 #endif
 			count++;
 		}
 	}
-	
-#if 0	
-	//转换地址
-	SPI_Addr_Flip(u8Addr, &i32Addr);
+#if 1
+	//发送数据
+	SPI_Send_StreamToK210(fpJpegFile, pstStream);
+	//发送写块命令,在地址为u8Addr写一个字节数据
+	//SPI_Send_CmdToK210(4, 16, u8Addr);
+	//发送数据给k210
+	//SPI_Send_DataToK210(test, 16);
 #endif	
 
-#if 0
-	//等待从机准备好
-	usleep(1);
-	//发送写数据块命令
-	SPI_Send_CmdToK210(2, 1, u8Addr);
-	//发送数据
-	//SPI_Send_DataToK210(fpJpegFile, pstStream, u8Addr, 4, 4);
-#endif		
-/*	
-	for (i = 0; i < pstStream->u32PackCount; i++)
-	{
-		;
-	}
-*/
 	return HI_SUCCESS;
 }
 #endif
